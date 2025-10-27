@@ -165,14 +165,14 @@ HACK_FUNCTION Hack_DumpFile
         ; Save eax for our own greedy usage
         mov     ebx, ecx
         sub     ebx, 0xA8
-        push    ebx
 
         ; Call Preload on the Object
+        ; thiscall so no need to clean up stack
         push    eax
         call    dword [edx + 0x10]
 
         ; Dump the object
-        ; argument is already on the stack
+        push    ebx
         mov     ecx, Hack_DumpFile
         call    ecx
         add     esp, (4 * 1)
@@ -181,6 +181,7 @@ HACK_FUNCTION Hack_DumpFile
         ; overwritten by us, so we're doing it here instead.
         mov     eax, [0x33C414]
 
+        ; Restore saved registers
         pop     ebx
 
         mov     ecx, EndLoad_Continue
@@ -351,9 +352,9 @@ HACK_FUNCTION Hack_DumpFile
         ; path
         add     esp, 0x200
         ; Restore saved registers
+        pop     ebx
         pop     esi
         pop     edi
-        pop     ebx
 
         ret
 
