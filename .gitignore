@@ -1,5 +1,3 @@
-*.xbe
-*.xbe.*
-XePatcher
-XboxImageXploder.exe
-*.bin
+inputs/
+tools/
+build/

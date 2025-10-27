@@ -1,0 +1,34 @@
+[tasks.rebuild_all]
+depends = ["patch_xbe"]
+description = "runs all steps, kills the emulator, and restarts it"
+
+[tasks.build_iso]
+depends = ["patch_xbe"]
+description = "rebuilds the game ISO"
+run = '''
+cp .\build\patch.xbe %SPLINTER_CELL_GAME_DIR%\default.xbe &&  .\tools\xdvdfs\xdvdfs.exe pack %SPLINTER_CELL_GAME_DIR% %SPLINTER_CELL_OUTPUT_ISO%
+'''
+
+[tasks.build_clean_iso]
+depends = ["patch_xbe"]
+description = "rebuilds the game ISO with the clean XBE"
+run = '''
+cp .\inputs\default.xbe %SPLINTER_CELL_GAME_DIR%\default.xbe &&  .\tools\xdvdfs\xdvdfs.exe pack %SPLINTER_CELL_GAME_DIR% %SPLINTER_CELL_OUTPUT_ISO%
+'''
+
+[tasks.build_patch]
+description = "build binary patch"
+run = '''
+.\tools\XePatcher\bin\nasm.exe -o .\build\SplinterCellFileDumper.bin .\SplinterCellFileDumper.asm
+'''
+
+[tasks.patch_xbe]
+depends = ["build_patch"]
+description = "apply the binary patch to the xbe"
+run = '''
+.\tools\XePatcher\XePatcher.exe -proc x86 -bin .\inputs\hacked.xbe -pb .\build\SplinterCellFileDumper.bin -o build\patch.xbe
+'''
+
+[env]
+SPLINTER_CELL_GAME_DIR = "C:\\Users\\lander\\Downloads\\SplinterCell"
+SPLINTER_CELL_OUTPUT_ISO = "G:\\SplinterCell.iso"
