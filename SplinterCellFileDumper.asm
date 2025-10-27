@@ -24,6 +24,16 @@ BITS 32
 ; The `mov` instruction at the end of UObject::StaticLoad
 ; that cleans up state.
 %define StaticLoad_Cleanup                              0004E84Fh
+; The `mov` instruction that would be executed immediately
+; after our VerifyImport hook
+%define VerifyImport_Continue                           0003907Bh
+; The `mov eax` instruction that woudl be executed immediately
+; after the `EndLoad` hook
+%define EndLoad_Continue                                00048E04h
+
+; When serializing data, it calls `ResetLoaders`. We want to nop
+; that
+%define ResetLoadersCall                                0003d1cbh
 
 ; Some very long string that we can overwrite
 %define VeryLongString                                  002862d0h
@@ -48,6 +58,8 @@ BITS 32
 
 ; Functions in our .hacks segment.
 HACK_FUNCTION Hack_StaticLoad_Hook
+HACK_FUNCTION Hack_VerifyImport_Hook
+HACK_FUNCTION Hack_EndLoad_Preload_Call_Hook
 HACK_FUNCTION Hack_DumpFile
 
 ; HACK_FUNCTION Hack_MenuHandler_MainMenu
@@ -80,23 +92,66 @@ HACK_FUNCTION Hack_DumpFile
 
     _long_string_end:
 
+    dd      0003d1cbh
+    dd      (_reset_loaders_end - _reset_loaders_start)
+    _reset_loaders_start:
+
+            nop
+            nop
+            nop
+            nop
+            nop
+
+    _reset_loaders_end:
+
     ;---------------------------------------------------------
     ; Patch the StaticLoad function to re-serialize the file
     ; right after it's loaded.
-    ;
-    ; NOTE: We have 0x42 bytes to work with!
     ;---------------------------------------------------------
     ;dd      (4E804h - ExecutableBaseAddress)
     ; offset
     dd      3e804h
-    dd      (_call_object_save_end - _call_object_save_start)
-    _call_object_save_start:
+    dd      (_hook_static_load_end - _hook_static_load_start)
+    _hook_static_load_start:
 
         ; Jump to our detour function
         mov     eax, Hack_StaticLoad_Hook
         jmp     eax
 
-    _call_object_save_end:
+    _hook_static_load_end:
+
+    ;---------------------------------------------------------
+    ; Patch VerifyImport to dump the file immediately after
+    ; `GetPackageLinker` is called
+    ;---------------------------------------------------------
+    ;dd      (38fech - ExecutableBaseAddress)
+    ; offset
+    dd      28fech
+    dd      (_verify_import_end - _verify_import_start)
+    _verify_import_start:
+
+        ; Jump to our detour function
+        ;mov     ecx, Hack_VerifyImport_Hook
+        ;jmp     ecx
+
+    _verify_import_end:
+
+    ;---------------------------------------------------------
+    ; Patch EndLoad to dump right after Preload on the object
+    ; is called
+    ;---------------------------------------------------------
+    ;dd      (48dfbh - ExecutableBaseAddress)
+    ; offset
+    dd      38dfbh
+    dd      (_endload_preload_call_end - _endload_preload_call_start)
+    _endload_preload_call_start:
+
+        ; Jump to our detour function
+        push    ebx
+        mov     ebx, Hack_EndLoad_Preload_Call_Hook
+        jmp     ebx
+
+    _endload_preload_call_end:
 
 
 ;---------------------------------------------------------
@@ -106,11 +161,60 @@ HACK_FUNCTION Hack_DumpFile
     dd  (_hacks_code_end - _hacks_code_start)
     _hacks_code_start:
 
+    _Hack_EndLoad_Preload_Call_Hook:
+        ; Save eax for our own greedy usage
+        mov     ebx, ecx
+        sub     ebx, 0xA8
+        push    ebx
+
+        ; Call Preload on the Object
+        push    eax
+        call    dword [edx + 0x10]
+
+        ; Dump the object
+        ; argument is already on the stack
+        mov     ecx, Hack_DumpFile
+        call    ecx
+        add     esp, (4 * 1)
+
+        ; unknown data location. this location gets partially
+        ; overwritten by us, so we're doing it here instead.
+        mov     eax, [0x33C414]
+
+        pop     ebx
+
+        mov     ecx, EndLoad_Continue
+        jmp     ecx
+
+
+    _Hack_VerifyImport_Hook:
+        ; These are the instructions we overwrote for our hook
+        add     esp, 14h
+        mov     [edi+14h], eax
+        mov     [ebp-4], dword 0FFFFFFFFh
+
+        ; ebx is the only register that the hooked function
+        ; needs, so we save it here.
+        push    ebx
+
+        push    eax
+        ; ecx gets immediately clobbered by the caller, so
+        ; there's no need to restore it
+        mov     ecx, Hack_DumpFile
+        call    ecx
+        add     esp, (4 * 1)
+
+        ; restore registers the caller needs
+        pop     ebx
+
+        ; Return control flow back to VerifyImport
+        mov     ecx, VerifyImport_Continue
+        jmp     ecx
+
     ;---------------------------------------------------------
     ; Not a function, but a jmp detour
     ;---------------------------------------------------------
     _Hack_StaticLoad_Hook:
-
         ; Call EndLoad so that the object gets populated
         ; Save the result object from the last call
         mov     eax, EndLoad
@@ -130,8 +234,8 @@ HACK_FUNCTION Hack_DumpFile
 
         ; Do function cleanup
         _do_object_save_jmp_cleanup:
-        mov     eax, StaticLoad_Cleanup
-        jmp     eax
+        mov     ebx, StaticLoad_Cleanup
+        jmp     ebx
 
     _Hack_DumpFile:
         ; Load the argument representing the
@@ -141,6 +245,7 @@ HACK_FUNCTION Hack_DumpFile
         ; Save registers
         push    edi
         push    esi
+        push    ebx
 
         ; Allocate space for the file path
         sub     esp, 0x200
@@ -227,7 +332,7 @@ HACK_FUNCTION Hack_DumpFile
         ; Base
         push    edi
         ; InOuter
-        push    eax
+        push    0x0;eax
 
         ; ( UObject* InOuter,
         ;   UObject* Base,
@@ -246,8 +351,9 @@ HACK_FUNCTION Hack_DumpFile
         ; path
         add     esp, 0x200
         ; Restore saved registers
-        pop esi
-        pop edi
+        pop     esi
+        pop     edi
+        pop     ebx
 
         ret
 
