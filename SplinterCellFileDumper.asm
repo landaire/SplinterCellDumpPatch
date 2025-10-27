@@ -47,6 +47,7 @@ BITS 32
 %endmacro
 
 ; Functions in our .hacks segment.
+HACK_FUNCTION Hack_StaticLoad_Hook
 HACK_FUNCTION Hack_DumpFile
 
 ; HACK_FUNCTION Hack_MenuHandler_MainMenu
@@ -92,7 +93,7 @@ HACK_FUNCTION Hack_DumpFile
     _call_object_save_start:
 
         ; Jump to our detour function
-        mov     eax, Hack_DumpFile_From_StaticLoad
+        mov     eax, Hack_StaticLoad_Hook
         jmp     eax
 
     _call_object_save_end:
@@ -108,7 +109,7 @@ HACK_FUNCTION Hack_DumpFile
     ;---------------------------------------------------------
     ; Not a function, but a jmp detour
     ;---------------------------------------------------------
-    _Hack_DumpFile_From_StaticLoad:
+    _Hack_StaticLoad_Hook:
 
         ; Call EndLoad so that the object gets populated
         ; Save the result object from the last call
@@ -116,17 +117,44 @@ HACK_FUNCTION Hack_DumpFile
         call    eax
 
         ; Grab the Linker object
-        mov     edi, [ebp-0x18]
+        mov     eax, [ebp-0x18]
         ; If the linker object is NULL, don't do anything
-        test    edi, edi
+        test    eax, eax
         jz      _do_object_save_jmp_cleanup
+
+        ; Only argument is the Linker object
+        mov     ecx, Hack_DumpFile
+        push    eax
+        call    ecx
+        add     esp, (4 * 1)
+
+        ; Do function cleanup
+        _do_object_save_jmp_cleanup:
+        mov     eax, StaticLoad_Cleanup
+        jmp     eax
+
+    _Hack_DumpFile:
+        ; Load the argument representing the
+        ; object that's being saved
+        mov     eax, [esp + 4]
+
+        ; Save registers
+        push    edi
+        push    esi
+
+        ; Allocate space for the file path
+        sub     esp, 0x200
+
+        ; Move the object into edi because I'm too lazy
+        ; to re-adjust registers
+        mov     edi, eax
 
         ; Grab the input filename
         mov     eax, [edi + 0x98]
         ; If the input filename is empty, jump to the cleanup routine
         ; since this is not a file that's in the packed .lin
         cmp    word [eax], 0
-        jz     _do_object_save_jmp_cleanup
+        jz     _Hack_DumpFile_Done
 
         ; Put the input filename in esi
         mov     esi, eax
@@ -157,9 +185,7 @@ HACK_FUNCTION Hack_DumpFile
         ; the lost final slash
         lea     esi, [esi - 2]
 
-        ; Adjust the stack pointer to make room
-        ; for the file path
-        sub     esp, 0x200
+        ; The file path is located at the beginning of the stack
         mov     ebx, esp
 
         ; Set the start of VeryLongString to `Z:`
@@ -213,14 +239,17 @@ HACK_FUNCTION Hack_DumpFile
         call    eax
         add     esp, (6 * 4)
 
+
+        _Hack_DumpFile_Done:
+
         ; Restore the stack to clean up the file
         ; path
         add     esp, 0x200
+        ; Restore saved registers
+        pop esi
+        pop edi
 
-        ; Do function cleanup
-        _do_object_save_jmp_cleanup:
-        mov     eax, StaticLoad_Cleanup
-        jmp     eax
+        ret
 
     _hacks_code_end:
 
