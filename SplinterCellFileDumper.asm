@@ -11,7 +11,7 @@ BITS 32
 %define HacksSegmentSize                00002000h           ; Size of the .hacks segment
 
 
-; Package saving functions:
+; Main binary functions:
 %define UObject_StaticLoad      0004E740h
 %define UObject_SavePackage     0004d0c0h
 %define wstrcpy                 001b19e9h
@@ -30,6 +30,9 @@ BITS 32
 ; The `mov eax` instruction that woudl be executed immediately
 ; after the `EndLoad` hook
 %define EndLoad_Continue                                00048E04h
+; The instruction after the loop which touches up flags on
+; imports/exports in SavePackage
+%define Save_Package_Save_Summary_Start                 0004d7a8h
 
 ; When serializing data, it calls `ResetLoaders`. We want to nop
 ; that
@@ -92,17 +95,64 @@ HACK_FUNCTION Hack_DumpFile
 
     _long_string_end:
 
+    ;---------------------------------------------------------
+    ; BEGIN PATCHES WITHIN `SavePackage` WHICH PREVENT DATA
+    ; FROM BEING MUTATED
+    ;---------------------------------------------------------
+
+    ; offset
+    ; this instruction sequence is
+    ;
+    ; 0004d212  mov     eax, dword [ebp-0x21c {i_5}]
+    ; 0004d218  mov     ecx, dword [data_33c424]
+    ; 0004d21e  mov     esi, 0xfff8ffe7
+    ; 0004d223  cmp     eax, ecx
+    dd      0003d21eh
+    dd      (_set_package_flag_end - _set_package_flag_start)
+    _set_package_flag_start:
+
+        ; five-byte insruction
+        ; mov     esi, 0
+
+    _set_package_flag_end:
+
+    ; offset
+    dd      0003d105h
+    dd      (_clear_flags_end - _clear_flags_start)
+    _clear_flags_start:
+
+        ; two-byte insruction
+        ;nop
+        ;nop
+
+    _clear_flags_end:
+
+    ; offset
+    dd      0003d551h
+    dd      (_skip_import_export_touchups_end - _skip_import_export_touchups_start)
+    _skip_import_export_touchups_start:
+
+        ;mov     eax, Save_Package_Save_Summary_Start
+        ;jmp     eax
+
+    _skip_import_export_touchups_end:
+
+    ; offset
     dd      0003d1cbh
     dd      (_reset_loaders_end - _reset_loaders_start)
     _reset_loaders_start:
 
-            nop
-            nop
-            nop
-            nop
-            nop
+        nop
+        nop
+        nop
+        nop
+        nop
 
     _reset_loaders_end:
+
+    ;---------------------------------------------------------
+    ; END `SavePackage` MUTATIONS
+    ;---------------------------------------------------------
 
     ;---------------------------------------------------------
     ; Patch the StaticLoad function to re-serialize the file
@@ -147,9 +197,9 @@ HACK_FUNCTION Hack_DumpFile
     _endload_preload_call_start:
 
         ; Jump to our detour function
-        push    ebx
-        mov     ebx, Hack_EndLoad_Preload_Call_Hook
-        jmp     ebx
+        ;push    ebx
+        ;mov     ebx, Hack_EndLoad_Preload_Call_Hook
+        ;jmp     ebx
 
     _endload_preload_call_end:
 
@@ -333,7 +383,7 @@ HACK_FUNCTION Hack_DumpFile
         ; Base
         push    edi
         ; InOuter
-        push    0x0;eax
+        push    eax
 
         ; ( UObject* InOuter,
         ;   UObject* Base,
