@@ -18,12 +18,14 @@ BITS 32
 %define appStrchr               000293D0h
 %define appStrcat               000293e0h
 %define EndLoad                 00048D80h
+%define ExportIndex             00039620h
+%define ExportSize              00000024h
 
 
 ; Data defines:
 ; The `mov` instruction at the end of UObject::StaticLoad
 ; that cleans up state.
-%define StaticLoad_Cleanup                              0004E84Fh
+%define StaticLoad_Cleanup                              0004E856h
 ; The `mov` instruction that would be executed immediately
 ; after our VerifyImport hook
 %define VerifyImport_Continue                           0003907Bh
@@ -48,6 +50,12 @@ BITS 32
 %define ZDrive                                          0027235ch
 
 %define GlobalError                                     002b1508h
+
+; Offset of the Summary field on a ULinkerLoad
+%define ULinkerLoadSummaryOffset                        00000030h
+%define SummaryExportCountOffset                        (6 * 4)
+%define ExportFlagsOffset                               (5 * 4)
+%define RF_NeedLoad                                     00000200h
 
 
 ; Macros
@@ -160,7 +168,7 @@ HACK_FUNCTION Hack_DumpFile
     ;---------------------------------------------------------
     ;dd      (4E804h - ExecutableBaseAddress)
     ; offset
-    dd      3e804h
+    dd      3e84ah
     dd      (_hook_static_load_end - _hook_static_load_start)
     _hook_static_load_start:
 
@@ -277,6 +285,35 @@ HACK_FUNCTION Hack_DumpFile
         test    eax, eax
         jz      _do_object_save_jmp_cleanup
 
+        ; Iterate the object's exports. If all are loaded, we can dump
+
+        ; Grab the export data pointer
+        mov     ecx, [eax + 0x88]
+        ; Grab the number of exports
+        mov     ebx, [eax + 0x8C]
+        imul    ebx, ExportSize
+
+        ; esi will hold the current export offset for the lifetime of the loop
+        mov     esi, 0
+        _do_object_save_loop_start:
+        cmp     esi, ebx
+        jz      _do_object_save_dump_file
+
+        ; Grab the current export flags
+        lea     eax, [ecx + esi]
+        mov     eax, [eax + ExportFlagsOffset]
+        and     eax, RF_NeedLoad
+
+        ; If the export has the RF_NeedLoad flag,
+        ; we should ignore this object.
+        test    eax, eax
+        jnz     _do_object_save_jmp_cleanup
+
+        add     esi, ExportSize
+        jmp     _do_object_save_loop_start
+
+        _do_object_save_dump_file:
+
         ; Only argument is the Linker object
         mov     ecx, Hack_DumpFile
         push    eax
@@ -285,8 +322,10 @@ HACK_FUNCTION Hack_DumpFile
 
         ; Do function cleanup
         _do_object_save_jmp_cleanup:
-        mov     ebx, StaticLoad_Cleanup
-        jmp     ebx
+        mov     [ebp - 0x4], dword 0FFFFFFFFh
+
+        mov     ecx, StaticLoad_Cleanup
+        jmp     ecx
 
     _Hack_DumpFile:
         ; Load the argument representing the
