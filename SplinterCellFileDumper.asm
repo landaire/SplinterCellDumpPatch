@@ -171,6 +171,12 @@ HACK_FUNCTION Hack_DumpFile
     dd      3e84ah
     dd      (_hook_static_load_end - _hook_static_load_start)
     _hook_static_load_start:
+        ; Get rid of the previous instruction
+        nop
+        nop
+        nop
+        nop
+        nop
 
         ; Jump to our detour function
         mov     eax, Hack_StaticLoad_Hook
