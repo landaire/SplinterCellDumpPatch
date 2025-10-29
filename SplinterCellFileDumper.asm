@@ -316,6 +316,10 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         jmp     ecx
 
     _do_object_save_start:
+        push    esi
+        push    edi
+        push    ebx
+
         ; Call EndLoad so that the object gets populated
         ; Save the result object from the last call
         mov     eax, EndLoad
@@ -380,13 +384,16 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
 
         ; Only argument is the Linker object
         mov     ecx, Hack_DumpFile
-        push    eax
         call    ecx
         add     esp, (4 * 1)
 
         ; Do function cleanup
         _do_object_save_jmp_cleanup:
         ;mov     [ebp - 0x4], dword 0FFFFFFFFh
+
+        pop     ebx
+        pop     edi
+        pop     esi
 
         mov     ecx, StaticLoad_Cleanup
         jmp     ecx
