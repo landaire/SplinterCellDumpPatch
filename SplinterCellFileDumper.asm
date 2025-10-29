@@ -331,55 +331,6 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         test    eax, eax
         jz      _do_object_save_jmp_cleanup
 
-        ; Iterate the object's exports. If all are loaded, we can dump
-
-        ; Grab the export data pointer
-        mov     ecx, [eax + 0x88]
-        ; Grab the number of exports
-        mov     ebx, [eax + 0x8C]
-        imul    ebx, ExportSize
-
-        ; esi will hold the current export offset for the lifetime of the loop
-        mov     esi, 0
-        _do_object_save_loop_start:
-        cmp     esi, ebx
-        jz      _do_object_save_dump_file
-
-        ; Grab the current export flags
-        lea     eax, [ecx + esi]
-        mov     eax, [eax + ExportFlagsOffset + 4]
-
-        ; Ignore if this export's size is zero
-        cmp     eax, 0
-        jz      _do_object_save_loop_end
-
-        ; Load the export again
-        lea     eax, [ecx + esi]
-
-        ; If all lower bits are set, ignore this
-        mov     eax, [eax + ExportFlagsOffset]
-        and     eax, 0x7F
-        cmp     eax, 0x7f
-        ;je      _do_object_save_loop_end
-
-        lea     eax, [ecx + esi]
-        mov     eax, [eax + ExportFlagsOffset + 0x12]
-        ;and     eax, RF_NeedLoad
-
-        ; If the export has the RF_NeedLoad flag,
-        ; we should ignore this object.
-        test    eax, eax
-        jz     _do_object_save_jmp_cleanup
-
-        _do_object_save_loop_end:
-
-        add     esi, ExportSize
-        jmp     _do_object_save_loop_start
-
-        _do_object_save_dump_file:
-
-        ; Grab the Linker object
-        mov     eax, [ebp-0x18]
         push    eax
 
         ; Only argument is the Linker object
