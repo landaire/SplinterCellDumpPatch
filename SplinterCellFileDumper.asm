@@ -363,6 +363,7 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         ;je      _do_object_save_loop_end
 
         lea     eax, [ecx + esi]
+        ; Grab the object pointer
         mov     eax, [eax + ExportFlagsOffset + 0x12]
         ;and     eax, RF_NeedLoad
 
@@ -417,33 +418,33 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         ; Grab the number of exports
         mov     ebx, [edi + 0x8C]
 
-        mov     eax, ebx
-        imul    eax, 4
-        sub     esp, eax
-
-        ; esi will hold the current export offset
-        mov     esi, 0
-        _dumpfile_save_flags_loop_start:
-        cmp     esi, ebx
-        jz      _dumpfile_save_flags_save_file_path
-
-        ; Load the export
-        mov     edx, esi
-        imul    edx, ExportSize
-
-        mov     eax, ecx
-        add     eax, edx
-        mov     eax, [eax + ExportFlagsOffset]
-        ; Push the flags to the stack
-        mov     edx, esi
-        imul    edx, 4
-        add     edx, esp
-        mov     [edx], eax
-
-        inc     esi
-        jmp     _dumpfile_save_flags_loop_start
-
-        _dumpfile_save_flags_save_file_path:
+;        mov     eax, ebx
+;        imul    eax, 4
+;        sub     esp, eax
+;
+;        ; esi will hold the current export offset
+;        mov     esi, 0
+;        _dumpfile_save_flags_loop_start:
+;        cmp     esi, ebx
+;        jz      _dumpfile_save_flags_save_file_path
+;
+;        ; Load the export
+;        mov     edx, esi
+;        imul    edx, ExportSize
+;
+;        mov     eax, ecx
+;        add     eax, edx
+;        mov     eax, [eax + ExportFlagsOffset]
+;        ; Push the flags to the stack
+;        mov     edx, esi
+;        imul    edx, 4
+;        add     edx, esp
+;        mov     [edx], eax
+;
+;        inc     esi
+;        jmp     _dumpfile_save_flags_loop_start
+;
+;        _dumpfile_save_flags_save_file_path:
 
         ; Allocate space for the file path
         sub     esp, 0x200
@@ -552,23 +553,23 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         ; Grab the number of exports
         mov     ebx, [edi + 0x8C]
 
-        ; esi will hold the current export index
-        mov     esi, 0
-        _dumpfile_restore_flags_loop_start:
-        cmp     esi, ebx
-        jz      _dumpfile_restore_registers
-
-        ; Load the export
-        lea     eax, [ecx + esi]
-        mov     edx, [esp + (esi * 4)]
-        mov     [eax + ExportFlagsOffset], edx
-
-        inc     esi
-        jmp     _dumpfile_restore_flags_loop_start
-
-        _dumpfile_restore_registers:
-        imul    esi, 4
-        add     esp, esi
+;        ; esi will hold the current export index
+;        mov     esi, 0
+;        _dumpfile_restore_flags_loop_start:
+;        cmp     esi, ebx
+;        jz      _dumpfile_restore_registers
+;
+;        ; Load the export
+;        lea     eax, [ecx + esi]
+;        mov     edx, [esp + (esi * 4)]
+;        mov     [eax + ExportFlagsOffset], edx
+;
+;        inc     esi
+;        jmp     _dumpfile_restore_flags_loop_start
+;
+;        _dumpfile_restore_registers:
+;        imul    esi, 4
+;        add     esp, esi
 
         ; Restore saved registers
         pop     ebx
