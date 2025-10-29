@@ -76,6 +76,7 @@ HACK_FUNCTION Hack_VerifyImport_Hook
 HACK_FUNCTION Hack_EndLoad_Preload_Call_Hook
 HACK_FUNCTION Hack_DumpFile
 HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
+HACK_FUNCTION Hack_EndLoad
 
 ; HACK_FUNCTION Hack_MenuHandler_MainMenu
 ;
@@ -176,8 +177,8 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
     dd      (_hook_static_load_end - _hook_static_load_start)
     _hook_static_load_start:
         ; Jump to our detour function
-        mov     ecx, Hack_StaticLoad_Hook
-        jmp     ecx
+        ;mov     ecx, Hack_StaticLoad_Hook
+        ;jmp     ecx
 
     _hook_static_load_end:
 
@@ -191,10 +192,27 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
     dd      (_hook_static_load_linker_no_result_end - _hook_static_load_linker_no_result_start)
     _hook_static_load_linker_no_result_start:
         ; Jump to our detour function
-        mov     ecx, Hack_StaticLoad_LinkerCreate_NoResult_Hook
-        jmp     ecx
+        ;mov     ecx, Hack_StaticLoad_LinkerCreate_NoResult_Hook
+        ;jmp     ecx
 
     _hook_static_load_linker_no_result_end:
+
+    ;---------------------------------------------------------
+    ; Patch the StaticLoad function to re-serialize the file
+    ; right after it's loaded.
+    ;---------------------------------------------------------
+    ;dd      (4E804h - ExecutableBaseAddress)
+    ; offset
+    dd      38dd9h
+    dd      (_hook_end_load_end - _hook_end_load_start)
+    _hook_end_load_start:
+        ; Jump to our detour function
+        mov     ecx, Hack_EndLoad
+        jmp     ecx
+        nop
+        nop
+
+    _hook_end_load_end:
 
     ;---------------------------------------------------------
     ; Patch VerifyImport to dump the file immediately after
@@ -236,6 +254,32 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
     dd  HacksSegmentOffset
     dd  (_hacks_code_end - _hacks_code_start)
     _hacks_code_start:
+
+    _Hack_EndLoad:
+        ; We overwrote these instruction
+
+          mov   eax, [ebp - 0x1c]
+          mov   eax, [eax + edi * 4]
+          mov   [ebp - 0x28], eax
+
+          ; Grab this object's linker
+          mov   eax, [eax + 0x10]
+
+          push  eax
+
+          mov   ecx, Hack_DumpFile
+          call  ecx
+
+          add   esp, (4 * 1)
+
+          ; Restore this object
+          mov   eax, [ebp - 0x1c]
+          mov   eax, [eax + edi * 4]
+          mov   [ebp - 0x28], eax
+
+          mov   ecx, 0x48de2
+          jmp   ecx
+
 
     _Hack_EndLoad_Preload_Call_Hook:
         ; Save eax for our own greedy usage
@@ -331,52 +375,6 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         test    eax, eax
         jz      _do_object_save_jmp_cleanup
 
-        ; Iterate the object's exports. If all are loaded, we can dump
-
-        ; Grab the export data pointer
-        mov     ecx, [eax + 0x88]
-        ; Grab the number of exports
-        mov     ebx, [eax + 0x8C]
-        imul    ebx, ExportSize
-
-        ; esi will hold the current export offset for the lifetime of the loop
-        mov     esi, 0
-        _do_object_save_loop_start:
-        cmp     esi, ebx
-        jz      _do_object_save_dump_file
-
-        ; Grab the current export flags
-        lea     eax, [ecx + esi]
-        mov     eax, [eax + ExportFlagsOffset + 4]
-
-        ; Ignore if this export's size is zero
-        cmp     eax, 0
-        jz      _do_object_save_loop_end
-
-        ; Load the export again
-        lea     eax, [ecx + esi]
-
-        ; If all lower bits are set, ignore this
-        mov     eax, [eax + ExportFlagsOffset]
-        and     eax, 0x7F
-        cmp     eax, 0x7f
-        ;je      _do_object_save_loop_end
-
-        lea     eax, [ecx + esi]
-        ; Grab the object pointer
-        mov     eax, [eax + ExportFlagsOffset + 0x12]
-        ;and     eax, RF_NeedLoad
-
-        ; If the export has the RF_NeedLoad flag,
-        ; we should ignore this object.
-        test    eax, eax
-        jz     _do_object_save_jmp_cleanup
-
-        _do_object_save_loop_end:
-
-        add     esi, ExportSize
-        jmp     _do_object_save_loop_start
-
         _do_object_save_dump_file:
 
         ; Grab the Linker object
@@ -411,40 +409,65 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
 
         mov     edi, eax
 
+        ; Iterate the object's exports. If all are loaded, we can dump
+
+        ; Grab the export data pointer
+        mov     ecx, [eax + 0x88]
+        ; Grab the number of exports
+        mov     ebx, [eax + 0x8C]
+        imul    ebx, ExportSize
+
+        ; esi will hold the current export offset for the lifetime of the loop
+        mov     esi, 0
+        _dump_file_object_ready_loop_start:
+        cmp     esi, ebx
+        jz      _dump_file_do_dump
+
+        ; Grab the current export flags
+        lea     eax, [ecx + esi]
+        mov     eax, [eax + ExportFlagsOffset + 4]
+
+        ; Ignore if this export's size is zero
+        cmp     eax, 0
+        jz      _dump_file_object_ready_loop_end
+
+        ; Load the export again
+        lea     eax, [ecx + esi]
+
+        ; If all lower bits are set, ignore this
+        mov     eax, [eax + ExportFlagsOffset]
+        and     eax, (0x7f | 0x00080000)
+        test    eax, eax
+        je      _dump_file_object_ready_loop_end
+
+        lea     eax, [ecx + esi]
+        ; Grab the object pointer
+        mov     eax, [eax + ExportFlagsOffset]
+       ; mov     eax, [eax + ExportFlagsOffset + 0x12]
+        and     eax, RF_NeedLoad
+
+        ; If the export has the RF_NeedLoad flag,
+        ; we should ignore this object.
+        test    eax, eax
+        lea     eax, [ecx + esi]
+        mov     eax, [eax + ExportFlagsOffset]
+        jnz    _dump_file_restore_registers
+
+        _dump_file_object_ready_loop_end:
+
+        add     esi, ExportSize
+        jmp     _dump_file_object_ready_loop_start
+
+        _dump_file_do_dump:
+
         ; Iterate the object's exports and save their flags
 
+        ; ==== NOT USED
         ; Grab the export data pointer
         mov     ecx, [edi + 0x88]
         ; Grab the number of exports
         mov     ebx, [edi + 0x8C]
-
-;        mov     eax, ebx
-;        imul    eax, 4
-;        sub     esp, eax
-;
-;        ; esi will hold the current export offset
-;        mov     esi, 0
-;        _dumpfile_save_flags_loop_start:
-;        cmp     esi, ebx
-;        jz      _dumpfile_save_flags_save_file_path
-;
-;        ; Load the export
-;        mov     edx, esi
-;        imul    edx, ExportSize
-;
-;        mov     eax, ecx
-;        add     eax, edx
-;        mov     eax, [eax + ExportFlagsOffset]
-;        ; Push the flags to the stack
-;        mov     edx, esi
-;        imul    edx, 4
-;        add     edx, esp
-;        mov     [edx], eax
-;
-;        inc     esi
-;        jmp     _dumpfile_save_flags_loop_start
-;
-;        _dumpfile_save_flags_save_file_path:
+        ; ==== NOT USED
 
         ; Allocate space for the file path
         sub     esp, 0x200
@@ -553,23 +576,7 @@ HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
         ; Grab the number of exports
         mov     ebx, [edi + 0x8C]
 
-;        ; esi will hold the current export index
-;        mov     esi, 0
-;        _dumpfile_restore_flags_loop_start:
-;        cmp     esi, ebx
-;        jz      _dumpfile_restore_registers
-;
-;        ; Load the export
-;        lea     eax, [ecx + esi]
-;        mov     edx, [esp + (esi * 4)]
-;        mov     [eax + ExportFlagsOffset], edx
-;
-;        inc     esi
-;        jmp     _dumpfile_restore_flags_loop_start
-;
-;        _dumpfile_restore_registers:
-;        imul    esi, 4
-;        add     esp, esi
+        _dump_file_restore_registers:
 
         ; Restore saved registers
         pop     ebx
