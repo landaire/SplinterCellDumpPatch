@@ -418,19 +418,17 @@ HACK_FUNCTION Hack_EndLoad
         ; Grab the number of exports
         mov     ebx, [eax + 0x8C]
 
-        ; Allocate space to hold flags
-        mov     eax, ebx
-        imul    eax, 4
-        sub     esp, eax
-
         ; esi will hold the current export index for the lifetime of the loop
         mov     esi, 0
         _dump_file_object_ready_loop_start:
         cmp     esi, ebx
         jz      _dump_file_do_dump
 
+        mov     edx, esi
+        imul    edx, ExportSize
+
         ; Grab the current export flags
-        lea     eax, [ecx + esi]
+        lea     eax, [ecx + edx]
         mov     eax, [eax + ExportFlagsOffset + 4]
 
         ; Ignore if this export's size is zero
@@ -440,50 +438,18 @@ HACK_FUNCTION Hack_EndLoad
         ; Load the export again
         mov     edx, esi
         imul    edx, ExportSize
-        push    ebx
-
-        ; Grab the current export
-        lea     ebx, [ecx + edx]
+        lea     eax, [ecx + edx]
 
         ; Load the flag
-        mov     eax, [ebx + ExportFlagsOffset]
-
-        ; Push the flags to the stack
-        mov     edx, esi
-        imul    edx, 4
-        mov     [esp + edx + 4], eax
-
-        ; Drop the RF_NeedLoad bit
-        mov     edx, RF_NeedLoad
-        not     edx
-        and     eax, edx
-        mov     [ebx + ExportFlagsOffset], eax
-
-        ; Grab the serial size
-        ;mov     edx, esi
-        ;imul    edx, 8
-        ;mov     eax, [ebx + ExportFlagsOffset + 4]
-        ;mov     [esp + edx + 8], eax
-
-        pop     ebx
-
-        ; If all lower bits are set, ignore this
-        ; and     eax, (0x7f | 0x00080000)
-        ; test    eax, eax
-        ; je      _dump_file_object_ready_loop_end
-
-        ; lea     eax, [ecx + esi * ExportSize]
-        ; Grab the object pointer
-        ; mov     eax, [eax + ExportFlagsOffset]
-       ; mov     eax, [eax + ExportFlagsOffset + 0x12]
-        ; and     eax, RF_NeedLoad
+        mov     eax, [eax + ExportFlagsOffset]
+        and     eax, RF_NeedLoad
 
         ; If the export has the RF_NeedLoad flag,
         ; we should ignore this object.
-        ; test    eax, eax
+        test    eax, eax
         ; lea     eax, [ecx + esi * ExportSize]
         ; mov     eax, [eax + ExportFlagsOffset]
-        ; jnz    _dump_file_restore_registers
+         jnz    _dump_file_restore_registers
 
         _dump_file_object_ready_loop_end:
 
@@ -603,34 +569,7 @@ HACK_FUNCTION Hack_EndLoad
 
         ; Restore the export flags
 
-        ; Grab the export data pointer
-        mov     ecx, [edi + 0x88]
-        ; Grab the number of exports
-        mov     ebx, [edi + 0x8C]
-
-        ; esi will hold the current export index
-        mov     esi, 0
-        _dump_file_restore_flags_loop_start:
-        cmp     esi, ebx
-        jz      _dump_file_restore_registers
-
-        ; Load the export
-        mov     edx, esi
-        imul    edx, ExportSize
-
-        ; Load the export
-        lea     eax, [ecx + edx]
-        ; Load its flag
-        mov     edx, [esp + (esi * 4)]
-        ; Set the export's flag
-        mov     [eax + ExportFlagsOffset], edx
-
-        inc     esi
-        jmp     _dump_file_restore_flags_loop_start
-
         _dump_file_restore_registers:
-        imul    esi, 4
-        add     esp, esi
 
         ; Restore saved registers
         pop     ebx
