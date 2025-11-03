@@ -316,7 +316,7 @@ HACK_FUNCTION Hack_LoadMap
         pop     ebx
         mov     esp, ebp
         pop     ebp
-        ret
+        retn    8
 
 
     _Hack_EndLoad:
@@ -330,12 +330,10 @@ HACK_FUNCTION Hack_LoadMap
 
           ; Grab this object's linker
           mov   eax, [eax + 0x10]
-
           push  eax
 
           mov   ecx, Hack_DumpFile
           call  ecx
-
           add   esp, (4 * 1)
 
           ; Restore this object
