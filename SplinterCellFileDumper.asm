@@ -54,7 +54,7 @@ BITS 32
 ; Offset of the Summary field on a ULinkerLoad
 %define ULinkerLoadSummaryOffset                        00000030h
 %define SummaryExportCountOffset                        (6 * 4)
-%define ExportFlagsOffset                               (5 * 4)
+%define ExportFlagsOffset                               (4 * 4)
 %define RF_NeedLoad                                     00000200h
 
 %define StaticLoad_NoObject_Path                        00004E808h
@@ -77,6 +77,7 @@ HACK_FUNCTION Hack_EndLoad_Preload_Call_Hook
 HACK_FUNCTION Hack_DumpFile
 HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
 HACK_FUNCTION Hack_EndLoad
+HACK_FUNCTION Hack_LoadMap
 
 ; HACK_FUNCTION Hack_MenuHandler_MainMenu
 ;
@@ -155,11 +156,11 @@ HACK_FUNCTION Hack_EndLoad
     dd      (_reset_loaders_end - _reset_loaders_start)
     _reset_loaders_start:
 
-        nop
-        nop
-        nop
-        nop
-        nop
+        ;nop
+        ;nop
+        ;nop
+        ;nop
+        ;nop
 
     _reset_loaders_end:
 
@@ -207,10 +208,10 @@ HACK_FUNCTION Hack_EndLoad
     dd      (_hook_end_load_end - _hook_end_load_start)
     _hook_end_load_start:
         ; Jump to our detour function
-        mov     ecx, Hack_EndLoad
-        jmp     ecx
-        nop
-        nop
+        ;mov     ecx, Hack_EndLoad
+        ;jmp     ecx
+        ;nop
+        ;nop
 
     _hook_end_load_end:
 
@@ -247,6 +248,22 @@ HACK_FUNCTION Hack_EndLoad
 
     _endload_preload_call_end:
 
+    ;---------------------------------------------------------
+    ; At the very end of the LoadMap() routine
+    ;---------------------------------------------------------
+    ;dd      (48dfbh - ExecutableBaseAddress)
+    ; offset
+    dd      73698h
+    dd      (_load_map_return_end - _load_map_return_start)
+    _load_map_return_start:
+
+        ; Jump to our detour function
+        push    esi
+        mov     eax, Hack_LoadMap
+        jmp     eax
+
+    _load_map_return_end:
+
 
 ;---------------------------------------------------------
 ; .hacks code segment
@@ -254,6 +271,53 @@ HACK_FUNCTION Hack_EndLoad
     dd  HacksSegmentOffset
     dd  (_hacks_code_end - _hacks_code_start)
     _hacks_code_start:
+
+    _Hack_LoadMap:
+        %define g_ObjectLinkers 0033c42ch
+
+        ; Load the linker count
+        mov     ebx, [g_ObjectLinkers + 4]
+        test    ebx, ebx
+        jz      _load_map_restore_registers
+
+        ; esi will be our index
+        mov     esi, 0
+
+        _load_map_linker_loop_start:
+
+        cmp     esi, ebx
+        jz      _load_map_linker_loop_finish
+
+        ; Iterate the linkers
+        mov     eax, [g_ObjectLinkers]
+        mov     ecx, esi
+        imul    ecx, 4
+
+        add     eax, ecx
+        mov     eax, [eax]
+        push    eax
+        mov     ecx, Hack_DumpFile
+        call    ecx
+        add     esp, (4 * 1)
+
+        _load_map_linker_loop_end:
+        inc     esi
+        jmp     _load_map_linker_loop_start
+
+        _load_map_linker_loop_finish:
+        _load_map_restore_registers:
+        ; return value that we clobbered
+        pop     eax
+
+        ; Since we patched in the prologue, we will just
+        ; do the register restore ourselves
+        pop     edi
+        pop     esi
+        pop     ebx
+        mov     esp, ebp
+        pop     ebp
+        ret
+
 
     _Hack_EndLoad:
         ; We overwrote these instruction
@@ -410,51 +474,6 @@ HACK_FUNCTION Hack_EndLoad
         push    ebx
 
         mov     edi, eax
-
-        ; Iterate the object's exports. If all are loaded, we can dump
-
-        ; Grab the export data pointer
-        mov     ecx, [eax + 0x88]
-        ; Grab the number of exports
-        mov     ebx, [eax + 0x8C]
-
-        ; esi will hold the current export index for the lifetime of the loop
-        mov     esi, 0
-        _dump_file_object_ready_loop_start:
-        cmp     esi, ebx
-        jz      _dump_file_do_dump
-
-        mov     edx, esi
-        imul    edx, ExportSize
-
-        ; Grab the current export flags
-        lea     eax, [ecx + edx]
-        mov     eax, [eax + ExportFlagsOffset + 4]
-
-        ; Ignore if this export's size is zero
-        cmp     eax, 0
-        jz      _dump_file_object_ready_loop_end
-
-        ; Load the export again
-        mov     edx, esi
-        imul    edx, ExportSize
-        lea     eax, [ecx + edx]
-
-        ; Load the flag
-        mov     eax, [eax + ExportFlagsOffset]
-        and     eax, RF_NeedLoad
-
-        ; If the export has the RF_NeedLoad flag,
-        ; we should ignore this object.
-        test    eax, eax
-        ; lea     eax, [ecx + esi * ExportSize]
-        ; mov     eax, [eax + ExportFlagsOffset]
-         jnz    _dump_file_restore_registers
-
-        _dump_file_object_ready_loop_end:
-
-        inc     esi
-        jmp     _dump_file_object_ready_loop_start
 
         _dump_file_do_dump:
 
