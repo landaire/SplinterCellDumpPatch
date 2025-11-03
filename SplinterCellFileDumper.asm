@@ -78,6 +78,11 @@ HACK_FUNCTION Hack_DumpFile
 HACK_FUNCTION Hack_StaticLoad_LinkerCreate_NoResult_Hook
 HACK_FUNCTION Hack_EndLoad
 HACK_FUNCTION Hack_LoadMap
+HACK_FUNCTION Hack_EndLoad_Epilogue
+HACK_FUNCTION Hack_DumpAllLinkers
+HACK_FUNCTION Hack_Engine_Init_Epilogue
+
+HACK_FUNCTION Hack_LoadMapCalled
 
 ; HACK_FUNCTION Hack_MenuHandler_MainMenu
 ;
@@ -216,6 +221,18 @@ HACK_FUNCTION Hack_LoadMap
     _hook_end_load_end:
 
     ;---------------------------------------------------------
+    ; Hook EndLoad's exit
+    ;---------------------------------------------------------
+    ;dd      (4E804h - ExecutableBaseAddress)
+    ; offset
+    dd      038EE9h
+    dd      (_hook_end_load_epilogue_end - _hook_end_load_epilogue_start)
+    _hook_end_load_epilogue_start:
+        ;mov     eax, Hack_EndLoad_Epilogue
+        ;jmp     eax
+    _hook_end_load_epilogue_end:
+
+    ;---------------------------------------------------------
     ; Patch VerifyImport to dump the file immediately after
     ; `GetPackageLinker` is called
     ;---------------------------------------------------------
@@ -258,12 +275,26 @@ HACK_FUNCTION Hack_LoadMap
     _load_map_return_start:
 
         ; Jump to our detour function
-        push    esi
-        mov     eax, Hack_LoadMap
-        jmp     eax
+        ;push    esi
+        ;mov     eax, Hack_LoadMap
+        ;jmp     eax
 
     _load_map_return_end:
 
+    ;---------------------------------------------------------
+    ; At the very end of the LoadMap() routine
+    ;---------------------------------------------------------
+    ;dd      (48dfbh - ExecutableBaseAddress)
+    ; offset
+    dd      73ecch
+    dd      (_engine_init_epilogue_end - _engine_init_epilogue_start)
+    _engine_init_epilogue_start:
+
+        ; Jump to our detour function
+        mov     eax, Hack_Engine_Init_Epilogue
+        jmp     eax
+
+    _engine_init_epilogue_end:
 
 ;---------------------------------------------------------
 ; .hacks code segment
@@ -272,21 +303,63 @@ HACK_FUNCTION Hack_LoadMap
     dd  (_hacks_code_end - _hacks_code_start)
     _hacks_code_start:
 
-    _Hack_LoadMap:
+    _Hack_LoadMapCalled:
+        dd      0
+
+    _Hack_Engine_Init_Epilogue:
+        mov     eax, Hack_DumpAllLinkers
+        call    eax
+
+        _engine_init_restore_regs:
+        pop     edi
+        pop     esi
+        pop     ebp
+        pop     ebx
+        mov     esp, ebp
+        pop     ebp
+        retn
+
+    _Hack_EndLoad_Epilogue:
+        push    ecx
+
+        mov     eax, Hack_LoadMapCalled
+        mov     ebx, [eax]
+        test    ebx, ebx
+        jz      _endload_epilogue_restore_registers
+
+        mov     eax, Hack_DumpAllLinkers
+        call    eax
+
+        _endload_epilogue_restore_registers:
+        pop     ecx
+        mov     dword [ebp-0x4], 0FFFFFFFFh
+        mov     ecx, [ebp-0xc]
+        mov     dword [fs:0], ecx
+        pop     edi
+        pop     esi
+        pop     ebx
+        mov     esp, ebp
+        pop     ebp
+        retn
+
+    _Hack_DumpAllLinkers:
+        push    ebx
+        push    esi
+
         %define g_ObjectLinkers 0033c42ch
 
         ; Load the linker count
         mov     ebx, [g_ObjectLinkers + 4]
         test    ebx, ebx
-        jz      _load_map_restore_registers
+        jz      _dump_all_linkers_restore_registers
 
         ; esi will be our index
         mov     esi, 0
 
-        _load_map_linker_loop_start:
+        _dump_all_linkers_linker_loop_start:
 
         cmp     esi, ebx
-        jz      _load_map_linker_loop_finish
+        jz      _dump_all_linkers_linker_loop_finish
 
         ; Iterate the linkers
         mov     eax, [g_ObjectLinkers]
@@ -300,13 +373,26 @@ HACK_FUNCTION Hack_LoadMap
         call    ecx
         add     esp, (4 * 1)
 
-        _load_map_linker_loop_end:
+        _dump_all_linkers_linker_loop_end:
         inc     esi
-        jmp     _load_map_linker_loop_start
+        jmp     _dump_all_linkers_linker_loop_start
 
-        _load_map_linker_loop_finish:
+        _dump_all_linkers_linker_loop_finish:
+        _dump_all_linkers_restore_registers:
+        pop     esi
+        pop     ebx
+        ret
+
+    _Hack_LoadMap:
+        mov     eax, Hack_DumpAllLinkers
+        call    eax
+
+        mov     eax, Hack_LoadMapCalled
+        mov     dword [eax], 1
+
         _load_map_restore_registers:
-        ; return value that we clobbered
+        ; return value that we clobbered in the
+        ; hook
         pop     eax
 
         ; Since we patched in the prologue, we will just
