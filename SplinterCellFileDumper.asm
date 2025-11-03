@@ -156,11 +156,11 @@ HACK_FUNCTION Hack_LoadMap
     dd      (_reset_loaders_end - _reset_loaders_start)
     _reset_loaders_start:
 
-        ;nop
-        ;nop
-        ;nop
-        ;nop
-        ;nop
+        nop
+        nop
+        nop
+        nop
+        nop
 
     _reset_loaders_end:
 
@@ -556,6 +556,8 @@ HACK_FUNCTION Hack_LoadMap
         ; InOuter
         mov     eax, [edi + 2Ch]
 
+        ; Pad size?
+        push    0xFFFFFFFF
         ; Conform
         push    0x0
         ; Error
@@ -563,7 +565,7 @@ HACK_FUNCTION Hack_LoadMap
         ; Filename
         push    esi
         ; TopLeveLFlags
-        push    0xFFFFFFFF
+        push    -1
         ; Base
         push    edi
         ; InOuter
@@ -577,7 +579,7 @@ HACK_FUNCTION Hack_LoadMap
         ;   ULinkerLoad* Conform=NULL );
         mov     eax, UObject_SavePackage
         call    eax
-        add     esp, (6 * 4)
+        add     esp, (7 * 4)
 
 
         _Hack_DumpFile_Done:
