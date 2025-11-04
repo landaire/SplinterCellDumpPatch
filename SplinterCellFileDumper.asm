@@ -20,6 +20,7 @@ BITS 32
 %define EndLoad                 00048D80h
 %define ExportIndex             00039620h
 %define ExportSize              00000024h
+%define CreateDirectory         00175AF7h
 
 
 ; Data defines:
@@ -573,17 +574,31 @@ HACK_FUNCTION Hack_LoadMapCalled
         ; Allocate space for the file path
         sub     esp, 0x200
 
-        ; Grab the input filename
+
+        ; Grab the linker's filename
         mov     eax, [edi + 0x98]
+
+        ; Put the input filename in esi
+        mov     esi, eax
+
         ; If the input filename is empty, jump to the cleanup routine
         ; since this is not a file that's in the packed .lin
         cmp    word [eax], 0
         jz     _Hack_DumpFile_Done
 
-        ; Put the input filename in esi
-        mov     esi, eax
+        ;===== DIRECTORY CREATION
+        ; The file path is located at the beginning of the stack
+        mov     ebx, esp
 
-        _Hack_DumpFile_File_BaseName:
+        ; Set the filename on the stack to `z:`
+        ; This has to be a char*, not a wchar_t*
+        mov     byte [esp], 'z'
+        mov     byte [esp + 1], ':'
+
+        ; This will hold our position in the path we're building
+        mov     ebx, 0
+
+        _Hack_DumpFile_File_Directory:
 
         ; We are looking for a backslash
         ; this is wchar_t `\`
@@ -595,19 +610,76 @@ HACK_FUNCTION Hack_LoadMapCalled
         call    eax
         add     esp, (4 * 2)
 
+        ; Not found
         test    eax, eax
-        jz      _Hack_DumpFile_BaseName_Continue
+        jz      _Hack_DumpFile_Directory_Finish
 
+        ; We found a slash -- check if we've discarded the first
+        ; bit of data before the slash (it's expected to start
+        ; with "..\" )
+        test    ebx, ebx
+        jnz     _Hack_DumpFile_File_Directory_Create_Directory
+
+        ; Update ebx to point to the first slash so we can use it
+        ; for later copying.
+        mov     ebx, eax
+        jmp     _hack_dumpfile_directory_end
+
+        _Hack_DumpFile_File_Directory_Create_Directory:
+
+        ; Skip the Z: part for the dest file path
+        lea     ecx, [esp + 2]
+        push    edx
+        push    esi
+        ; Start of the linker's file path
+        mov     esi, ebx
+
+        ; Copy from ebx to eax
+        _hack_dump_file_copy_directory_loop:
+        cmp     esi, eax
+        je      _hack_dump_file_copy_directory_loop_finish
+
+        mov     dl,   [esi]
+        mov     [ecx], dl
+        inc     ecx
+        ; we're doing some janky wchar_t to char
+        ; conversion tricks
+        add     esi, 2
+
+        jmp     _hack_dump_file_copy_directory_loop
+
+        _hack_dump_file_copy_directory_loop_finish:
+        ; Add null terminator
+        mov     byte [ecx], 0
+
+        pop     esi
+        pop     edx
+
+        mov     ecx, esp
+        ; Make sure we don't clobber eax
+        push    eax
+
+        ; Attributes
+        push    0x0
+        ; Create this directory
+        push    ecx
+        mov     ecx, CreateDirectory
+        call    ecx
+        ; cdecl function, it cleans up
+
+        pop     eax
+
+        _hack_dumpfile_directory_end:
         ; Save the position
-        mov     esi, eax
-        lea     esi, [esi + 2]
-        jmp     _Hack_DumpFile_File_BaseName
+        lea     esi, [eax + 2]
+        jmp     _Hack_DumpFile_File_Directory
 
-        _Hack_DumpFile_BaseName_Continue:
+        _Hack_DumpFile_Directory_Finish:
 
-        ; We need to go back 1 character to restore
-        ; the lost final slash
-        lea     esi, [esi - 2]
+        ; Set the file path we want to copy
+        mov     esi, ebx
+
+        ;===== FILE CREATION
 
         ; The file path is located at the beginning of the stack
         mov     ebx, esp
