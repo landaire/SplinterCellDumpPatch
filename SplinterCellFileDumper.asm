@@ -82,6 +82,7 @@ HACK_FUNCTION Hack_LoadMap
 HACK_FUNCTION Hack_EndLoad_Epilogue
 HACK_FUNCTION Hack_DumpAllLinkers
 HACK_FUNCTION Hack_Engine_Init_Epilogue
+HACK_FUNCTION Hack_LoadMyLevel
 
 HACK_FUNCTION Hack_LoadMapCalled
 
@@ -169,6 +170,34 @@ HACK_FUNCTION Hack_LoadMapCalled
         nop
 
     _reset_loaders_end:
+
+    dd  0dB4AAh ;B0h
+    dd (_nop_reset_mipmaps_end - _nop_reset_mipmap_start)
+    _nop_reset_mipmap_start:
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        add esp, 4
+        nop
+        nop
+    _nop_reset_mipmaps_end:
+
+    dd  0dc221h ;B0h
+    dd (_nop_reset_mimaps_in_serialize_end - _nop_reset_mimaps_in_serialize_start)
+    _nop_reset_mimaps_in_serialize_start:
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        add esp, 4
+        nop
+        nop
+    _nop_reset_mimaps_in_serialize_end:
 
     ;---------------------------------------------------------
     ; END `SavePackage` MUTATIONS
@@ -297,6 +326,21 @@ HACK_FUNCTION Hack_LoadMapCalled
 
     _engine_init_epilogue_end:
 
+    ;---------------------------------------------------------
+    ; Immediately after MyLevel is loaded
+    ;---------------------------------------------------------
+    ;dd      (48dfbh - ExecutableBaseAddress)
+    ; offset
+    dd      71a47h
+    dd      (_load_my_level_end - _load_my_level_start)
+    _load_my_level_start:
+
+        ; Jump to our detour function
+        ;mov     ecx, Hack_LoadMyLevel
+        ;jmp     ecx
+
+    _load_my_level_end:
+
 ;---------------------------------------------------------
 ; .hacks code segment
 ;---------------------------------------------------------
@@ -306,6 +350,18 @@ HACK_FUNCTION Hack_LoadMapCalled
 
     _Hack_LoadMapCalled:
         dd      0
+
+    _Hack_LoadMyLevel:
+        push    eax
+        mov     eax, Hack_DumpAllLinkers
+        call    eax
+
+        _load_my_level_register_cleanup:
+        pop     eax
+        mov     ecx, dword [esp + 0x24]
+        mov     dword [ecx + 0x13c], eax
+        mov     eax, 0x81a51
+        jmp     eax
 
     _Hack_Engine_Init_Epilogue:
         mov     eax, Hack_DumpAllLinkers
@@ -715,7 +771,7 @@ HACK_FUNCTION Hack_LoadMapCalled
         ; Pad size?
         push    0xFFFFFFFF
         ; Conform
-        push    0x0
+        push    edi
         ; Error
         push    edx
         ; Filename
